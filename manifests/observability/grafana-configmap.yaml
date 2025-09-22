@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: observability
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-server.observability.svc.cluster.local
+        isDefault: true
+      - name: OpenSearch
+        type: grafana-opensearch-datasource
+        access: proxy
+        url: https://opensearch.data.svc.cluster.local:9200
+        jsonData:
+          database: logs-*
+          timeField: '@timestamp'
+          version: '2.9.0'
+          interval: '1m'
+          tlsAuth: true
+          tlsAuthWithCACert: true
+        secureJsonData:
+          basicAuthUser: "${OPENSEARCH_USERNAME}"
+          basicAuthPassword: "${OPENSEARCH_PASSWORD}"

@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-jmx-config
+  namespace: streaming
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: kafka
+data:
+  config.yaml: |
+    lowercaseOutputName: true
+    lowercaseOutputLabelNames: true
+    whitelistObjectNames:
+      - kafka.server:type=BrokerTopicMetrics,name=MessagesInPerSec
+      - kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec
+      - kafka.server:type=BrokerTopicMetrics,name=BytesOutPerSec
+      - kafka.network:type=RequestMetrics,name=RequestsPerSec,request=Produce
+      - kafka.network:type=RequestMetrics,name=RequestsPerSec,request=FetchConsumer
+    rules:
+      - pattern: kafka.server<type=(BrokerTopicMetrics), name=(.*)PerSec, topic=(.+)>
+        name: kafka_server_$1_per_second
+        labels:
+          topic: "$2"
+        type: GAUGE
+      - pattern: kafka.network<type=(RequestMetrics), name=(RequestsPerSec), request=(.*)>
+        name: kafka_network_request_per_second
+        labels:
+          request: "$2"
+        type: GAUGE

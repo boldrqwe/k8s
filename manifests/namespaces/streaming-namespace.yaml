@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: streaming
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/name: streaming
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
