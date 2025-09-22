@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: opensearch-pdb
+  namespace: data
+  labels:
+    app.kubernetes.io/name: opensearch
+    app.kubernetes.io/component: search
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: opensearch
+      app.kubernetes.io/component: search

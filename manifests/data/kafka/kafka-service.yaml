@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: streaming
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/part-of: kafka
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: broker
+  ports:
+    - name: kafka-client
+      port: 9092
+      targetPort: kafka-client
+    - name: metrics
+      port: 9308
+      targetPort: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+  namespace: streaming
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/part-of: kafka
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: broker
+  ports:
+    - name: kafka-client
+      port: 9092
+      targetPort: kafka-client
+    - name: kafka-internal
+      port: 9093
+      targetPort: kafka-internal
+    - name: metrics
+      port: 9308
+      targetPort: metrics

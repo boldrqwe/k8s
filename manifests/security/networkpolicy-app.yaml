@@ -1,0 +1,48 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: app-allow-listed
+  namespace: app
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: app
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: data
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: observability
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: data
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: streaming
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: observability
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9200
