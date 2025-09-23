@@ -3,15 +3,10 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   # Namespaces and policies
-  - namespaces/app-namespace.yaml
-  - namespaces/data-namespace.yaml
-  - namespaces/streaming-namespace.yaml
-  - namespaces/observability-namespace.yaml
   - namespaces/app-resources.yaml
   - namespaces/data-resources.yaml
   - namespaces/streaming-resources.yaml
   - namespaces/observability-resources.yaml
-  - security/cluster-issuer.yaml
   - security/networkpolicy-app.yaml
   - security/networkpolicy-data.yaml
   - security/networkpolicy-observability.yaml
