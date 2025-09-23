@@ -36,6 +36,8 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /usr/share/opensearch/data
+      securityContext:
+        fsGroup: 1000
       containers:
         - name: opensearch
           image: opensearchproject/opensearch:2.9.0
@@ -43,7 +45,6 @@ spec:
           securityContext:
             runAsUser: 1000
             runAsGroup: 1000
-            fsGroup: 1000
           ports:
             - containerPort: 9200
               name: http
