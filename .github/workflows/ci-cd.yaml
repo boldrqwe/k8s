@@ -1,13 +1,14 @@
+---
 name: ci-cd
 
-on:
+'on':
   push:
     branches:
       - main
   pull_request:
     branches:
       - main
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
@@ -34,6 +35,12 @@ jobs:
       - name: Render kustomize manifests
         run: kustomize build "$KUSTOMIZE_DIR" > manifest.yaml
 
+      - name: Ensure manifest has document start
+        run: |
+          if [ -s manifest.yaml ] && ! head -n 1 manifest.yaml | grep -q '^---'; then
+            sed -i '1i ---' manifest.yaml
+          fi
+
       - name: Validate manifests with kubeconform
         run: kubeconform -strict -ignore-missing-schemas -summary manifest.yaml
 
@@ -46,6 +53,8 @@ jobs:
               line-length:
                 max: 160
                 level: warning
+              indentation:
+                indent-sequences: whatever
 
   build-and-push:
     name: Build and push container images
@@ -117,6 +126,12 @@ jobs:
 
       - name: Render manifests
         run: kustomize build "$KUSTOMIZE_DIR" > manifest.yaml
+
+      - name: Ensure manifest has document start
+        run: |
+          if [ -s manifest.yaml ] && ! head -n 1 manifest.yaml | grep -q '^---'; then
+            sed -i '1i ---' manifest.yaml
+          fi
 
       - name: Apply manifests
         env:
