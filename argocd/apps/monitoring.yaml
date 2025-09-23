@@ -16,11 +16,13 @@ spec:
       releaseName: monitoring
       values: |
         fullnameOverride: monitoring
+        grafana:
+          enabled: true
         prometheus:
           prometheusSpec:
             serviceMonitorSelectorNilUsesHelmValues: false
-        grafana:
-          enabled: true
+            podMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
   destination:
     server: https://kubernetes.default.svc
     namespace: observability
@@ -30,4 +32,5 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+
 ---
