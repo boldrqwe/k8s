@@ -9,9 +9,9 @@ metadata:
 spec:
   project: platform
   source:
-    repoURL: "https://prometheus-community.github.io/helm-charts"
+    repoURL: https://prometheus-community.github.io/helm-charts
     chart: kube-prometheus-stack
-    targetRevision: "57.0.3"              # зафиксируй версию
+    targetRevision: 57.0.3
     helm:
       releaseName: monitoring
       values: |
@@ -30,4 +30,3 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
----
