@@ -38,7 +38,7 @@ spec:
         fsGroup: 1001
       containers:
         - name: frontend
-          image: ghcr.io/your-org/frontend:latest
+          image: ghcr.io/your-org/frontend
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
