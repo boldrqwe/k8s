@@ -5,7 +5,7 @@
 ## Структура
 
 ```
-manifests/
+base/
   namespaces/          # пространства имён, квоты и ограничения
   apps/                # приложения (frontend, backend)
   data/                # базы данных и брокеры (Postgres, Kafka, OpenSearch)
@@ -16,7 +16,9 @@ manifests/
   storage/             # классы хранения для stateful сервисов
 environments/
   production/          # kustomization для сборки полного стека
-.github/workflows/     # GitHub Actions для валидации и деплоя
+argocd/
+  apps/                # Argo CD Application манифесты
+.github/workflows/     # GitHub Actions для валидации и публикации образов
 ```
 
 ## Подготовка к деплою
@@ -25,7 +27,7 @@ environments/
 2. **Образы контейнеров**: обновите поля `image` в манифестах backend и frontend (и CronJob бэкапов) на свои регистры. Workflow `build-and-push` автоматически соберёт образы, если в каталоге существуют `frontend/Dockerfile` и `backend/Dockerfile`.
 3. **Ingress и домены**: замените домены `app.example.com`, `api.example.com` и `grafana.example.com` на свои. Убедитесь, что в кластере установлен ingress-контроллер (например, nginx) и cert-manager.
 4. **Объектное хранилище**: в секрете `object-storage-credentials` задайте доступ к S3-совместимому хранилищу для бэкапов PostgreSQL.
-5. **Хранилище**: отредактируйте `manifests/storage/fast-storageclass.yaml` под вашего провайдера (сейчас пример для AWS EBS gp3). При необходимости добавьте другие `StorageClass`.
+5. **Хранилище**: отредактируйте `base/storage/fast-storageclass.yaml` под вашего провайдера (сейчас пример для AWS EBS gp3). При необходимости добавьте другие `StorageClass`.
 6. **Мониторинг**: ServiceMonitor ресурсы предполагают наличие Prometheus Operator. Настройте Prometheus и Alertmanager отдельно.
 
 ## Деплой локально/вручную
@@ -53,12 +55,17 @@ Workflow `.github/workflows/ci-cd.yaml` выполняет следующие э
 
 1. **Validate** – рендерит Kustomize, валидирует манифесты через kubeconform и yamllint.
 2. **Build and push** – собирает и пушит образы фронтенда и бэкенда в GHCR (если есть Dockerfile).
-3. **Deploy** – при пуше в `main` применяет манифесты в кластер с использованием секрета `KUBECONFIG_B64`.
+3. **Bump overlay** – обновляет теги образов в `environments/production/kustomization.yaml` и создаёт Pull Request с изменениями.
 
 Необходимые секреты:
 
-- `KUBECONFIG_B64` – base64-кодированный kubeconfig с правами на прод-кластер.
 - (Опционально) дополнительные секреты для docker login, если используется сторонний регистр.
+
+## GitOps (Argo CD)
+
+- Статус приложения можно проверить в веб-интерфейсе Argo CD или через CLI командой `argocd app get instructions-prod`.
+- Источник правды для Argo CD описан в [argocd/apps/prod.yaml](argocd/apps/prod.yaml).
+- Процесс доставки: GitHub Actions собирает и публикует образы → создаётся PR с обновлёнными тегами в `environments/production` → после мержа Argo CD автоматически синхронизирует состояние кластера.
 
 ## Дополнительные рекомендации
 
