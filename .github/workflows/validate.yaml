@@ -1,9 +1,10 @@
+---
 name: validate
 
-on:
+'on':
   pull_request:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   validate:
@@ -37,6 +38,8 @@ jobs:
           config_data: |
             extends: default
             rules:
+              indentation:
+                indent-sequences: whatever
               line-length:
                 max: 160
                 level: warning
