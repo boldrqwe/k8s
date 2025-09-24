@@ -1,24 +1,11 @@
----
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
-
-patchesStrategicMerge:
-  # spread fixes
-  - patches/spread-frontend.yaml
-  - patches/spread-backend.yaml
-
-  # storageclass -> local-path
-  - patches/sc-postgres.yaml
-  - patches/sc-opensearch.yaml
-  - patches/sc-kafka.yaml
-  - patches/sc-zookeeper.yaml
-
-  # PSA relax (временно)
-  - patches/ns-data-psa.yaml
-  - patches/ns-streaming-psa.yaml
-
-  # (опц.) заглушки HPA
-  # - patches/hpa-frontend.yaml
-  # - patches/hpa-backend.yaml
+configMapGenerator:
+  - name: demo-config
+    behavior: merge
+    literals:
+      - WELCOME_MESSAGE=Hello from the production environment
+generatorOptions:
+  disableNameSuffixHash: true
