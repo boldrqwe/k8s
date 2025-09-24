@@ -8,7 +8,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: hello.<YOUR-IP>.sslip.io   # подставь внешний IP сервера
+    - host: hello.79.174.84.176.sslip.io   # подставь внешний IP сервера
       http:
         paths:
           - path: /
