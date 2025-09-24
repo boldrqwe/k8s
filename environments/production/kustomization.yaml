@@ -1,24 +1,29 @@
 ---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+
 resources:
   - ../../base
 
-patchesStrategicMerge:
-  # spread fixes
-  - patches/spread-frontend.yaml
-  - patches/spread-backend.yaml
-
-  # storageclass -> local-path
-  - patches/sc-postgres.yaml
-  - patches/sc-opensearch.yaml
-  - patches/sc-kafka.yaml
-  - patches/sc-zookeeper.yaml
-
-  # PSA relax (временно)
-  - patches/ns-data-psa.yaml
-  - patches/ns-streaming-psa.yaml
-
-  # (опц.) заглушки HPA
-  # - patches/hpa-frontend.yaml
-  # - patches/hpa-backend.yaml
+patches:
+  - target:
+      kind: ConfigMap
+      name: demo-config
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: demo-config
+      data:
+        APP_MESSAGE: Hello from Production
+        APP_VERSION: "1.1.0"
+  - target:
+      kind: Deployment
+      name: demo-app
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: demo-app
+      spec:
+        replicas: 2

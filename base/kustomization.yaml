@@ -1,53 +1,11 @@
 ---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+
+namespace: demo
+
 resources:
-  # Namespaces and policies
-  - namespaces/app-resources.yaml
-  - namespaces/data-resources.yaml
-  - namespaces/streaming-resources.yaml
-  - namespaces/observability-resources.yaml
-  - security/networkpolicy-app.yaml
-  - security/networkpolicy-data.yaml
-  - security/networkpolicy-observability.yaml
-  # Storage classes
-  - storage/fast-storageclass.yaml
-  # Application layer
-  - apps/backend/configmap.yaml
-  - apps/backend/secret.yaml
-  - apps/backend/serviceaccount.yaml
-  - apps/backend/deployment.yaml
-  - apps/backend/service.yaml
-  - apps/backend/hpa.yaml
-  - apps/frontend/configmap.yaml
-  - apps/frontend/serviceaccount.yaml
-  - apps/frontend/deployment.yaml
-  - apps/frontend/service.yaml
-  - apps/frontend/hpa.yaml
-  - networking/ingress.yaml
-  # Data services
-  - data/postgres/configmap.yaml
-  - data/postgres/secret.yaml
-  - data/postgres/service.yaml
-  - data/postgres/statefulset.yaml
-  - data/postgres/backup-cronjob.yaml
-  - data/postgres/object-storage-secret.yaml
-  - data/kafka/zookeeper-service.yaml
-  - data/kafka/zookeeper-statefulset.yaml
-  - data/kafka/kafka-configmap.yaml
-  - data/kafka/kafka-service.yaml
-  - data/kafka/kafka-statefulset.yaml
-  - data/kafka/pdb.yaml
-  - data/opensearch/configmap.yaml
-  - data/opensearch/secret.yaml
-  - data/opensearch/service.yaml
-  - data/opensearch/statefulset.yaml
-  - data/opensearch/pdb.yaml
-  # Observability
-  - observability/grafana-configmap.yaml
-  - observability/grafana-secret.yaml
-  - observability/grafana-basic-auth.yaml
-  - observability/grafana-deployment.yaml
-  - observability/grafana-service.yaml
-  - observability/grafana-ingress.yaml
-  - monitoring/servicemonitors.yaml
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
