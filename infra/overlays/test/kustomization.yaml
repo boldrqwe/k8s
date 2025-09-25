@@ -3,9 +3,9 @@ kind: Kustomization
 
 resources:
   - ../../base
-  - namespace.yaml          # ← здесь объявлён ТОЛЬКО один ns: prod
+  - namespace.yaml          # ← здесь объявлён ТОЛЬКО один ns: test
 
-# (опционально) патчи для прод — см. ниже
+# (опционально) патчи для теста — см. ниже
 # patches:
 #   - path: patch-resources.yaml
 #   - path: patch-ingress-host.yaml
