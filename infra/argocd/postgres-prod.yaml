@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres-prod
+  namespace: argocd        # ← Argo CD живёт в argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.bitnami.com/bitnami
+    chart: postgresql
+    targetRevision: 16.7.27
+    helm:
+      releaseName: postgres-prod
+      values: |
+        architecture: standalone
+        primary:
+          persistence:
+            enabled: true
+            size: 10Gi
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: 1, memory: 1Gi }
+        service:
+          type: ClusterIP
+        auth:
+          existingSecret: postgres-auth   # ← пароли берём из секрета
+          database: appdb
+          username: app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod                        # ← БД ставим в prod
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.bitnami.com/bitnami   # тянем официальный Helm-чарт
+    chart: postgresql
+    targetRevision: 16.7.27                       # версия чарта (фиксируем!)
+    helm:
+      releaseName: postgres
+      # Самый простой, но рабочий набор значений (dev):
+      values: |
+        architecture: standalone
+        primary:
+          persistence:
+            enabled: true
+            size: 10Gi
+            # storageClass: "local-path"  # укажи, если default не "local-path"
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+        service:
+          type: ClusterIP
+        auth:
+          database: appdb
+          username: app
+          password: "change_me"             # dev-упрощение; в prod лучше Secret
+          postgresPassword: "change_root"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: apps
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
