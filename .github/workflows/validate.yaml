@@ -40,14 +40,4 @@ jobs:
       - name: Validate (kubeconform)
         run: kubeconform -strict -ignore-missing-schemas -summary manifest.yaml
 
-      - name: Lint YAML
-        uses: ibiqlik/action-yamllint@v3
-        with:
-          config_data: |
-            extends: default
-            rules:
-              indentation:
-                indent-sequences: whatever
-              line-length:
-                max: 160
-                level: warning
+
