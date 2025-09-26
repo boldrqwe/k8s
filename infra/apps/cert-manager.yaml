@@ -1,21 +1,23 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: hello-test
+  name: cert-manager
   namespace: argocd
 spec:
   project: default
   source:
-    repoURL: https://github.com/boldrqwe/k8s.git    # замени на свой репозиторий
-    path: infra/overlays/test
-    targetRevision: main
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: v1.15.0
+    helm:
+      values: |-
+        installCRDs: true
   destination:
     server: https://kubernetes.default.svc
-    namespace: apps
+    namespace: cert-manager
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      - ApplyOutOfSyncOnly=true
