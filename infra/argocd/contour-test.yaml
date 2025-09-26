@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: contour-test
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.projectcontour.io
+    chart: contour
+    targetRevision: 15.0.2
+    helm:
+      releaseName: contour-test
+      values: |
+        contour:
+          ingressClass:
+            name: contour-test
+            default: false
+        envoy:
+          service:
+            type: ClusterIP
+            annotations:
+              projectcontour.io/in-cluster-only: "true"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: contour-test
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: contour-prod
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.projectcontour.io
+    chart: contour
+    targetRevision: 15.0.2
+    helm:
+      releaseName: contour-prod
+      values: |
+        contour:
+          ingressClass:
+            name: contour-prod
+            default: true
+        envoy:
+          service:
+            type: LoadBalancer
+            externalTrafficPolicy: Cluster
+            annotations:
+              projectcontour.io/public-access: "true"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: contour-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
