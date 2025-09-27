@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: app-project
+  namespace: argocd
+spec:
+  description: Applications for backend and PostgreSQL workloads
+  sourceRepos:
+    - https://github.com/boldrqwe/k8s.git
+    - oci://registry-1.docker.io/bitnamicharts
+  destinations:
+    - namespace: prod
+      server: https://kubernetes.default.svc
+    - namespace: test
+      server: https://kubernetes.default.svc
+    - namespace: db
+      server: https://kubernetes.default.svc
+    - namespace: db-test
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
