@@ -4,7 +4,7 @@ namespace: test
 resources: ["../../base"]
 images:
   - name: backend
-    newName: ghcr.io/boldrqwe/instructions_backend
+    newName: ghcr.io/boldrqwe/instructions
     newTag: latest
 patches:
   - path: patch-deployment.yaml

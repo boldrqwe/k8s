@@ -13,6 +13,7 @@ spec:
       containers:
       - name: backend
         image: backend:latest
+        imagePullPolicy: Always
         ports: [{ containerPort: 8080 }]
         env:
         - { name: DB_HOST, value: "postgres" }
