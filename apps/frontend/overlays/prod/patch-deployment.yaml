@@ -1,4 +1,12 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: frontend }
-spec: { replicas: 2 }
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: frontend
+          env:
+            - name: VITE_API_URL
+              value: "http://api.79.174.84.176.sslip.io"
