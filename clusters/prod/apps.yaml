@@ -4,7 +4,7 @@ metadata:
   name: backend-prod
   namespace: argocd
 spec:
-  project: default
+  project: app-project
   source:
     repoURL: https://github.com/boldrqwe/k8s.git
     targetRevision: main
@@ -13,11 +13,8 @@ spec:
     server: https://kubernetes.default.svc
     namespace: prod
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
+    automated: { selfHeal: true, prune: true }
+    syncOptions: [ "CreateNamespace=true" ]
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -25,7 +22,7 @@ metadata:
   name: frontend-prod
   namespace: argocd
 spec:
-  project: default
+  project: app-project
   source:
     repoURL: https://github.com/boldrqwe/k8s.git
     targetRevision: main
@@ -34,11 +31,8 @@ spec:
     server: https://kubernetes.default.svc
     namespace: prod
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
+    automated: { selfHeal: true, prune: true }
+    syncOptions: [ "CreateNamespace=true" ]
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -46,17 +40,14 @@ metadata:
   name: db-prod
   namespace: argocd
 spec:
-  project: default
+  project: app-project
   source:
     repoURL: https://github.com/boldrqwe/k8s.git
     targetRevision: main
     path: apps/db/overlays/prod
   destination:
     server: https://kubernetes.default.svc
-    namespace: prod
+    namespace: db
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
+    automated: { selfHeal: true, prune: true }
+    syncOptions: [ "CreateNamespace=true" ]
