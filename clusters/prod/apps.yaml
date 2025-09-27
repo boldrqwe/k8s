@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: env-prod
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/boldrqwe/k8s.git
+    targetRevision: main
+    path: clusters/prod
+    directory: { recurse: true }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [ CreateNamespace=true ]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: { name: backend-prod, namespace: argocd }
+spec:
+  project: default
+  source: { repoURL: https://github.com/boldrqwe/k8s.git, targetRevision: main, path: apps/backend/overlays/prod }
+  destination: { server: https://kubernetes.default.svc, namespace: prod }
+  syncPolicy: { automated: { prune: true, selfHeal: true }, syncOptions: [CreateNamespace=true] }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: { name: frontend-prod, namespace: argocd }
+spec:
+  project: default
+  source: { repoURL: https://github.com/boldrqwe/k8s.git, targetRevision: main, path: apps/frontend/overlays/prod }
+  destination: { server: https://kubernetes.default.svc, namespace: prod }
+  syncPolicy: { automated: { prune: true, selfHeal: true }, syncOptions: [CreateNamespace=true] }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: { name: db-prod, namespace: argocd }
+spec:
+  project: default
+  source: { repoURL: https://github.com/boldrqwe/k8s.git, targetRevision: main, path: apps/db/overlays/prod }
+  destination: { server: https://kubernetes.default.svc, namespace: prod }
+  syncPolicy: { automated: { prune: true, selfHeal: true }, syncOptions: [CreateNamespace=true] }
