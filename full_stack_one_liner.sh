@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
-cat <<'EOCMD'
-sudo bash -s <<'EOSCRIPT'
+if [[ $EUID -ne 0 ]]; then exec sudo -E bash "$0" "$@"; fi
 set -euo pipefail
 
 require() {
@@ -145,7 +142,7 @@ kubectl get namespace cert-manager >/dev/null 2>&1 || kubectl create namespace c
 kubectl get namespace ingress-nginx >/dev/null 2>&1 || kubectl create namespace ingress-nginx
 
 if ! kubectl get deploy -n ingress-nginx ingress-nginx-controller >/dev/null 2>&1; then
-  curl -sSL https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml     | sed 's/LoadBalancer/NodePort/g'     | kubectl apply -f -
+  curl -sSL https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml     | kubectl apply -f -
 fi
 
 kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=10m
@@ -204,6 +201,7 @@ metadata:
   namespace: ${namespace}
   annotations:
     kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-http
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/hsts: "true"
     nginx.ingress.kubernetes.io/hsts-max-age: "31536000"
@@ -481,7 +479,7 @@ EOF
 helm upgrade --install opensearch opensearch/opensearch -n logging -f /tmp/k3s-bootstrap/opensearch-values.yaml --wait --timeout 20m
 
 cat <<EOF > /tmp/k3s-bootstrap/opensearch-dashboards-values.yaml
-opensearchHosts: "https://opensearch-master.logging.svc.cluster.local:9200"
+opensearchHosts: "http://opensearch-master.logging.svc.cluster.local:9200"
 service:
   type: ClusterIP
 persistence:
@@ -527,8 +525,7 @@ config:
           Match *
           Host  opensearch-master.logging.svc.cluster.local
           Port  9200
-          HTTPS On
-          tls.verify Off
+          HTTPS Off
           Index fluentbit
           Logstash_Format On
           Replace_Dots On
@@ -537,7 +534,7 @@ EOF
 
 helm upgrade --install fluent-bit fluent/fluent-bit -n logging -f /tmp/k3s-bootstrap/fluent-bit-values.yaml --wait --timeout 10m
 
-helm upgrade --install tempo jaegertracing/jaeger -n tracing   --set provisionDataStore.cassandra=false   --set provisionDataStore.elasticsearch=false   --set storage.type=memory   --wait --timeout 10m
+helm upgrade --install jaeger jaegertracing/jaeger -n tracing   --set provisionDataStore.cassandra=false   --set provisionDataStore.elasticsearch=false   --set storage.type=memory   --wait --timeout 10m
 
 apply_ingress trace tracing "$HOST_TRACE" jaeger-query 16686 trace-tls "" ""
 
@@ -611,6 +608,56 @@ spec:
           protocol: UDP
 EOFNP
 
+cat <<'EOFNP' | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prod-api-from-ingress-and-web
+  namespace: prod
+spec:
+  podSelector:
+    matchLabels:
+      app: prod-api
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              app: prod-web
+      ports:
+        - port: 8080
+EOFNP
+
+cat <<'EOFNP' | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prod-api-to-postgres-and-dns
+  namespace: prod
+spec:
+  podSelector:
+    matchLabels:
+      app: prod-api
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: prod
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: postgres-prod
+      ports:
+        - port: 5432
+    - to: []
+      ports:
+        - port: 53
+          protocol: UDP
+EOFNP
+
 if ! kubectl get deploy -n kyverno kyverno >/dev/null 2>&1; then
   kubectl apply -f https://github.com/kyverno/kyverno/releases/latest/download/install.yaml
 fi
@@ -653,12 +700,25 @@ spec:
         resources:
           kinds:
             - Pod
+      exclude:
+        resources:
+          namespaces:
+            - kube-system
+            - kube-public
+            - kyverno
+            - cert-manager
+            - ingress-nginx
+            - argocd
       validate:
         message: Containers must set runAsNonRoot true.
-        pattern:
-          spec:
-            securityContext:
-              runAsNonRoot: true
+        anyPattern:
+          - spec:
+              securityContext:
+                runAsNonRoot: true
+          - spec:
+              containers:
+                - securityContext:
+                    runAsNonRoot: true
 EOCPOL
 
 for ns in argocd prod test observability logging tracing; do
@@ -696,5 +756,3 @@ To change domains later:
   kubectl patch ingress <name> -n <namespace> --type merge -p '{"spec":{"rules":[{"host":"new.host"}]}}' && certificates will renew automatically.
 ========================================
 EOR
-EOSCRIPT
-EOCMD
