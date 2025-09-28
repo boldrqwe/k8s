@@ -1,6 +1,6 @@
 # Argo CD Applications
 
-This repository defines the Argo CD applications that deliver the backend service and the PostgreSQL databases for the `prod` and `test` environments.
+This repository defines the Argo CD applications that deliver the backend service and the PostgreSQL databases for the `prod` and `test` environments. It also provides an installation helper that can be used to bootstrap a complete k3s-based platform for these applications.
 
 ## Application layout
 
@@ -40,3 +40,7 @@ The PostgreSQL instances are deployed from the Bitnami OCI chart (`oci://registr
    Add `-h` to see more options, such as syncing `backend-test` or `db-test`.
 
 Remember to update the placeholder passwords in the secrets before performing a production sync.
+
+## Full platform bootstrap
+
+Run `full_stack_one_liner.sh` to print the single-line `sudo bash -s <<'EOF' ... EOF` command that provisions k3s, ingress, GitOps, databases, observability, backups, and security tooling exactly as described in the deployment checklist. The generated command is idempotent and prompts for the minimal set of runtime parameters (ACME email, domain mode, alert destinations, and S3 credentials) before applying the manifests.
