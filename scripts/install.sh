@@ -21,7 +21,6 @@ main() {
   install_observability
   install_logging
   install_tracing
-  install_backup
   apply_network_policies
   install_kyverno
   wait_for_certificates
@@ -136,11 +135,6 @@ collect_inputs() {
       ;;
   esac
 
-  prompt_default S3_ENDPOINT "S3 endpoint (empty for AWS): " ""
-  prompt_required S3_REGION "S3 region: "
-  prompt_required S3_BUCKET "S3 bucket: "
-  prompt_required S3_ACCESS_KEY "S3 access key: "
-  prompt_required S3_SECRET_KEY "S3 secret key: "
 }
 
 prepare_directories() {
@@ -211,7 +205,7 @@ install_argocd() {
     kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGO_VERSION}/manifests/install.yaml"
   fi
   kubectl -n argocd rollout status deployment/argocd-server --timeout=10m
-  apply_ingress argocd argocd "$HOST_ARGO" argocd-server 443 argocd-tls "" "    nginx.ingress.kubernetes.io/backend-protocol: \"HTTPS\""
+  apply_ingress argocd argocd "$HOST_ARGO" argocd-server 443 argocd-tls "" "nginx.ingress.kubernetes.io/backend-protocol: \"HTTPS\""
 }
 
 install_helm_if_missing() {
@@ -388,6 +382,10 @@ EOSVC
 
 apply_ingress() {
   local name="$1" namespace="$2" host="$3" svc="$4" port="$5" tlsSecret="$6" extra="$7" annotations="$8"
+  local formatted_annotations=""
+  if [[ -n "$annotations" ]]; then
+    formatted_annotations="$(printf '%s\n' "$annotations" | sed 's/^/    /')"
+  fi
   cat <<EOI | kubectl apply -f -
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -401,15 +399,7 @@ metadata:
     nginx.ingress.kubernetes.io/hsts: "true"
     nginx.ingress.kubernetes.io/hsts-max-age: "31536000"
     nginx.ingress.kubernetes.io/proxy-body-size: "32m"
-    nginx.ingress.kubernetes.io/server-snippet: |
-      add_header Content-Security-Policy "default-src 'self'; connect-src 'self' https:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; frame-ancestors 'none';" always;
-      add_header Referrer-Policy strict-origin-when-cross-origin always;
-      add_header X-Content-Type-Options nosniff always;
-      add_header X-Frame-Options SAMEORIGIN always;
-      add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
-      gzip on;
-      gzip_types text/plain text/css application/json application/javascript application/xml;
-${annotations}
+$(if [[ -n "$formatted_annotations" ]]; then printf '%s\n' "$formatted_annotations"; fi)
 spec:
   ingressClassName: nginx
   tls:
@@ -593,49 +583,6 @@ install_tracing() {
     --set storage.type=memory \
     --wait --timeout 10m
   apply_ingress trace tracing "$HOST_TRACE" jaeger-query 16686 trace-tls "" ""
-}
-
-install_backup() {
-  cat <<EOF > "$INSTALL_ROOT/velero-values.yaml"
-configuration:
-  provider: aws
-  backupStorageLocation:
-    name: default
-    bucket: ${S3_BUCKET}
-    config:
-      region: ${S3_REGION}
-$(velero_endpoint)
-  volumeSnapshotLocation:
-    name: default
-    config:
-      region: ${S3_REGION}
-credentials:
-  useSecret: true
-  secretContents:
-    cloud: |
-      [default]
-      aws_access_key_id=${S3_ACCESS_KEY}
-      aws_secret_access_key=${S3_SECRET_KEY}
-initContainers:
-  - name: velero-plugin-for-aws
-    image: velero/velero-plugin-for-aws:v1.6.0
-    volumeMounts:
-      - mountPath: /target
-        name: plugins
-schedules:
-  daily:
-    schedule: "0 3 * * *"
-    template:
-      ttl: 168h
-EOF
-
-  helm upgrade --install velero vmware-tanzu/velero -n backups -f "$INSTALL_ROOT/velero-values.yaml" --set configuration.backupStorageLocation.config.s3ForcePathStyle=true --wait --timeout 15m
-}
-
-velero_endpoint() {
-  if [[ -n "$S3_ENDPOINT" ]]; then
-    printf '      s3Url: %s\n' "$S3_ENDPOINT"
-  fi
 }
 
 apply_network_policies() {
