@@ -36,6 +36,22 @@ curl -fsSL https://raw.githubusercontent.com/<org>/<repo>/main/scripts/install-d
 sudo ./scripts/install-dependencies.sh
 ```
 
+### Если установка остановилась на Kyverno
+
+Иногда при применении манифестов Kyverno через `kubectl apply` возникает ошибка вида:
+
+```
+CustomResourceDefinition.apiextensions.k8s.io "clusterpolicies.kyverno.io" is invalid: metadata.annotations: Too long
+```
+
+Чтобы продолжить установку без повторного запуска уже пройденных этапов, воспользуйтесь скриптом [`scripts/install-kyverno-resume.sh`](scripts/install-kyverno-resume.sh). Он применяет официальный манифест Kyverno в режиме *server-side apply*, дожидается развёртывания контроллеров, устанавливает базовые политики и формирует итоговое резюме по доступам.
+
+```bash
+sudo ./scripts/install-kyverno-resume.sh
+```
+
+Скрипт можно запускать повторно — он идемпотентен.
+
 ---
 
 ## 2) Окружения и состав
