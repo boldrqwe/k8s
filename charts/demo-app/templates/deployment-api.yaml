@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "demo-app.fullname" . }}-api
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      app: {{ include "demo-app.fullname" . }}-api
+  template:
+    metadata:
+      labels:
+        app: {{ include "demo-app.fullname" . }}-api
+        {{- include "demo-app.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: api
+          image: {{ .Values.api.image }}
+          env:
+            - name: PORT
+              value: {{ printf "%d" .Values.api.port | quote }}
+          ports:
+            - containerPort: {{ .Values.api.port }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}

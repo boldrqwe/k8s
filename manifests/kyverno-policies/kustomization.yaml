@@ -1,0 +1,3 @@
+resources:
+  - disallow-privileged.yaml
+  - require-runasnonroot.yaml

@@ -16,13 +16,9 @@ main() {
   install_argocd
   install_helm_if_missing
   add_helm_repositories
-  install_databases
-  deploy_demo_sites
-  install_observability
-  install_logging
-  install_tracing
-  apply_network_policies
-  install_kyverno
+  ensure_postgres_secrets
+  apply_argocd_applications
+  wait_for_applications
   wait_for_certificates
   print_summary
 }
@@ -67,6 +63,18 @@ prompt_default() {
   export "$var"
 }
 
+detect_repo_defaults() {
+  local script_dir repo_root repo_url repo_revision
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if git -C "${script_dir}/.." rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    repo_url="$(git -C "${script_dir}/.." config --get remote.origin.url 2>/dev/null || true)"
+    repo_revision="$(git -C "${script_dir}/.." rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+    printf '%s %s' "$repo_url" "$repo_revision"
+  else
+    printf ' '
+  fi
+}
+
 collect_inputs() {
   prompt_required ACME_EMAIL "Enter ACME email for Let's Encrypt: "
   prompt_default DOMAIN_MODE "Domain mode (sslip.io/custom) [sslip.io]: " "sslip.io"
@@ -90,6 +98,7 @@ collect_inputs() {
     HOST_GRAFANA="grafana.${HOST_SUFFIX}"
     HOST_LOGS="logs.${HOST_SUFFIX}"
     HOST_TRACE="trace.${HOST_SUFFIX}"
+    HOST_DASHBOARD="k8s.${HOST_SUFFIX}"
   else
     prompt_required HOST_SITE "Enter hostname for PROD site: "
     prompt_required HOST_TEST "Enter hostname for TEST site: "
@@ -97,6 +106,7 @@ collect_inputs() {
     prompt_required HOST_GRAFANA "Enter hostname for Grafana: "
     prompt_required HOST_LOGS "Enter hostname for OpenSearch Dashboards: "
     prompt_required HOST_TRACE "Enter hostname for tracing UI: "
+    prompt_required HOST_DASHBOARD "Enter hostname for Kubernetes dashboard: "
     echo "--- Host summary ---" >&2
     printf ' PROD  : %s\n' "$HOST_SITE" >&2
     printf ' TEST  : %s\n' "$HOST_TEST" >&2
@@ -104,6 +114,7 @@ collect_inputs() {
     printf ' Grafana: %s\n' "$HOST_GRAFANA" >&2
     printf ' Logs  : %s\n' "$HOST_LOGS" >&2
     printf ' Trace : %s\n' "$HOST_TRACE" >&2
+    printf ' K8s   : %s\n' "$HOST_DASHBOARD" >&2
     read -r -p "Continue with these hostnames? (y/N): " CONFIRM
     if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
       echo "Aborted by user" >&2
@@ -134,7 +145,6 @@ collect_inputs() {
       exit 1
       ;;
   esac
-
 }
 
 prepare_directories() {
@@ -156,7 +166,7 @@ install_k3s_if_missing() {
 }
 
 create_namespaces() {
-  local namespaces=(argocd test prod observability logging tracing backups security kyverno)
+  local namespaces=(argocd test prod observability logging tracing backups security kyverno kubernetes-dashboard)
   for ns in "${namespaces[@]}"; do
     kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   done
@@ -221,6 +231,8 @@ add_helm_repositories() {
   helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts >/dev/null 2>&1 || true
   helm repo add jaegertracing https://jaegertracing.github.io/helm-charts >/dev/null 2>&1 || true
   helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts >/dev/null 2>&1 || true
+  helm repo add kyverno https://kyverno.github.io/kyverno >/dev/null 2>&1 || true
+  helm repo add kubernetes-dashboard https://kubernetes.github.io/dashboard >/dev/null 2>&1 || true
   helm repo update >/dev/null 2>&1
 }
 
@@ -228,157 +240,594 @@ rand_secret() {
   openssl rand -hex 16
 }
 
-install_databases() {
-  create_pg prod postgres-prod app-postgres-prod
-  create_pg test postgres-test app-postgres-test
-  wait_rollout prod statefulset postgres-prod-postgresql
-  wait_rollout test statefulset postgres-test-postgresql
+ensure_postgres_secrets() {
+  ensure_pg_secret prod app-postgres-prod
+  ensure_pg_secret test app-postgres-test
 }
 
-create_pg() {
-  local namespace="$1" release="$2" secret="$3" password
+ensure_pg_secret() {
+  local namespace="$1" secret="$2" password
   password="$(kubectl -n "$namespace" get secret "$secret" -o jsonpath='{.data.postgres-password}' 2>/dev/null | base64 -d || rand_secret)"
   kubectl -n "$namespace" create secret generic "$secret" \
     --from-literal=postgres-password="$password" \
     --from-literal=password="$password" \
     --from-literal=postgres-root-password="$password" \
     --dry-run=client -o yaml | kubectl apply -f -
-  helm upgrade --install "$release" oci://registry-1.docker.io/bitnamicharts/postgresql \
-    --namespace "$namespace" \
-    --set global.postgresql.auth.database=appdb \
-    --set global.postgresql.auth.username=app \
-    --set global.postgresql.auth.existingSecret="$secret" \
-    --set primary.persistence.size=10Gi \
-    --set volumePermissions.enabled=true \
-    --wait --timeout 15m
 }
 
-deploy_demo_sites() {
-  create_static_site prod prod "User-agent: *\nAllow: /" "$HOST_SITE"
-  create_static_site test test "User-agent: *\nDisallow: /" "$HOST_TEST"
-  apply_ingress prod-site prod "$HOST_SITE" prod-web 80 prod-site-tls "/api" "prod-api" 80 ""
-  apply_ingress test-site test "$HOST_TEST" test-web 80 test-site-tls "/api" "test-api" 80 ""
-}
+apply_argocd_applications() {
+  local alert_block
+  alert_block="$(alert_config | sed 's/^/      /')"
 
-create_static_site() {
-  local namespace="$1" name="$2" robots="$3" host="$4"
-  kubectl -n "$namespace" create configmap "${name}-content" \
-    --from-literal=index.html="<!DOCTYPE html><html><head><meta charset='utf-8'><title>${name^}</title></head><body><main><h1>${name^} environment</h1><p>Everything is up.</p></main></body></html>" \
-    --from-literal=robots.txt="$robots" \
-    --from-literal=sitemap.xml="<?xml version='1.0' encoding='UTF-8'?><urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'><url><loc>https://${host}/</loc></url></urlset>" \
-    --dry-run=client -o yaml | kubectl apply -f -
-
-  kubectl apply -n "$namespace" -f - <<EOFDEP
-apiVersion: apps/v1
-kind: Deployment
+  kubectl apply -n argocd -f - <<EOF
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
 metadata:
-  name: ${name}-web
-  labels:
-    app: ${name}-web
+  name: postgres-prod
+  namespace: argocd
 spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: ${name}-web
-  template:
-    metadata:
-      labels:
-        app: ${name}-web
-    spec:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 101
-      containers:
-        - name: nginx
-          image: nginx:1.25-alpine
-          ports:
-            - containerPort: 80
-          volumeMounts:
-            - name: html
-              mountPath: /usr/share/nginx/html
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod
+  source:
+    repoURL: https://charts.bitnami.com/bitnami
+    chart: postgresql
+    targetRevision: 16.7.27
+    helm:
+      values: |
+        global:
+          postgresql:
+            auth:
+              database: appdb
+              username: app
+              existingSecret: app-postgres-prod
+        primary:
+          persistence:
+            size: 10Gi
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 300m
+              cpu: 100m
               memory: 256Mi
-      volumes:
-        - name: html
-          configMap:
-            name: ${name}-content
-EOFDEP
-
-  kubectl apply -n "$namespace" -f - <<EOFECHO
-apiVersion: apps/v1
-kind: Deployment
+          podSecurityContext:
+            enabled: true
+        volumePermissions:
+          enabled: true
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
 metadata:
-  name: ${name}-api
-  labels:
-    app: ${name}-api
+  name: postgres-test
+  namespace: argocd
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: ${name}-api
-  template:
-    metadata:
-      labels:
-        app: ${name}-api
-    spec:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-      containers:
-        - name: echo
-          image: ealen/echo-server:0.8.10
-          env:
-            - name: PORT
-              value: "8080"
-          ports:
-            - containerPort: 8080
-          securityContext:
-            readOnlyRootFilesystem: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: test
+  source:
+    repoURL: https://charts.bitnami.com/bitnami
+    chart: postgresql
+    targetRevision: 16.7.27
+    helm:
+      values: |
+        global:
+          postgresql:
+            auth:
+              database: appdb
+              username: app
+              existingSecret: app-postgres-test
+        primary:
+          persistence:
+            size: 10Gi
           resources:
             requests:
-              cpu: 25m
-              memory: 64Mi
-            limits:
-              cpu: 200m
-              memory: 128Mi
-EOFECHO
-
-  kubectl -n "$namespace" apply -f - <<EOSVC
-apiVersion: v1
-kind: Service
+              cpu: 100m
+              memory: 256Mi
+          podSecurityContext:
+            enabled: true
+        volumePermissions:
+          enabled: true
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
 metadata:
-  name: ${name}-web
+  name: demo-prod
+  namespace: argocd
 spec:
-  selector:
-    app: ${name}-web
-  ports:
-    - name: http
-      port: 80
-      targetPort: 80
-EOSVC
-
-  kubectl -n "$namespace" apply -f - <<EOSVC
-apiVersion: v1
-kind: Service
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod
+  source:
+    repoURL: ${ARGO_REPO_URL}
+    path: charts/demo-app
+    targetRevision: ${ARGO_TARGET_REVISION}
+    helm:
+      values: |
+        fullnameOverride: prod
+        envName: prod
+        robots: |
+          User-agent: *
+          Allow: /
+        siteTitle: "PROD"
+        ingress:
+          host: ${HOST_SITE}
+          tlsSecret: prod-site-tls
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
 metadata:
-  name: ${name}-api
+  name: demo-test
+  namespace: argocd
 spec:
-  selector:
-    app: ${name}-api
-  ports:
-    - name: http
-      port: 80
-      targetPort: 8080
-EOSVC
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: test
+  source:
+    repoURL: ${ARGO_REPO_URL}
+    path: charts/demo-app
+    targetRevision: ${ARGO_TARGET_REVISION}
+    helm:
+      values: |
+        fullnameOverride: test
+        envName: test
+        robots: |
+          User-agent: *
+          Disallow: /
+        siteTitle: "TEST"
+        ingress:
+          host: ${HOST_TEST}
+          tlsSecret: test-site-tls
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 77.12.0
+    helm:
+      values: |
+        alertmanager:
+          config:
+            global:
+              resolve_timeout: 5m
+${alert_block}
+        prometheus:
+          prometheusSpec:
+            retention: ${RETENTION_METRICS}d
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  accessModes:
+                    - ReadWriteOnce
+                  resources:
+                    requests:
+                      storage: 20Gi
+        grafana:
+          enabled: true
+          grafana.ini:
+            server:
+              root_url: https://${HOST_GRAFANA}
+              domain: ${HOST_GRAFANA}
+          persistence:
+            enabled: true
+            size: 5Gi
+          ingress:
+            enabled: false
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opensearch
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  source:
+    repoURL: https://opensearch-project.github.io/helm-charts
+    chart: opensearch
+    targetRevision: 3.2.1
+    helm:
+      values: |
+        singleNode: true
+        persistence:
+          size: 20Gi
+        resources:
+          requests:
+            cpu: 200m
+            memory: 1Gi
+          limits:
+            cpu: 1
+            memory: 4Gi
+        config:
+          opensearch.yml: |
+            plugins.security.disabled: true
+            cluster.routing.allocation.disk.threshold_enabled: false
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opensearch-dashboards
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  source:
+    repoURL: https://opensearch-project.github.io/helm-charts
+    chart: opensearch-dashboards
+    targetRevision: 3.2.2
+    helm:
+      values: |
+        opensearchHosts: "http://opensearch-master.logging.svc.cluster.local:9200"
+        service:
+          type: ClusterIP
+        persistence:
+          enabled: true
+          size: 5Gi
+        ingress:
+          enabled: true
+          className: nginx
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-http
+            nginx.ingress.kubernetes.io/ssl-redirect: "true"
+            nginx.ingress.kubernetes.io/hsts: "true"
+            nginx.ingress.kubernetes.io/hsts-max-age: "31536000"
+          hosts:
+            - host: ${HOST_LOGS}
+              paths:
+                - path: /
+                  pathType: Prefix
+          tls:
+            - secretName: logs-tls
+              hosts:
+                - ${HOST_LOGS}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fluent-bit
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  source:
+    repoURL: https://fluent.github.io/helm-charts
+    chart: fluent-bit
+    targetRevision: 0.53.0
+    helm:
+      values: |
+        serviceAccount:
+          create: true
+        config:
+          service: |
+            [SERVICE]
+                Daemon Off
+                Flush 1
+                Log_Level info
+                Parsers_File /fluent-bit/etc/parsers.conf
+                Parsers_File /fluent-bit/etc/conf/custom_parsers.conf
+                HTTP_Server On
+                HTTP_Listen 0.0.0.0
+                HTTP_Port 2020
+                Health_Check On
+          inputs: |
+            [INPUT]
+                Name tail
+                Path /var/log/containers/*.log
+                multiline.parser docker
+                Tag kube.*
+                Mem_Buf_Limit 5MB
+                Skip_Long_Lines On
+          filters: |
+            [FILTER]
+                Name kubernetes
+                Match kube.*
+                Kube_URL https://kubernetes.default.svc:443
+                Kube_Tag_Prefix kube.var.log.containers.
+                Merge_Log On
+                Keep_Log Off
+                Labels On
+                Annotations Off
+          outputs: |
+            [OUTPUT]
+                Name  es
+                Match *
+                Host  opensearch-master.logging.svc.cluster.local
+                Port  9200
+                HTTPS Off
+                Logstash_Format On
+                Logstash_Prefix fluentbit
+                Replace_Dots On
+                Retry_Limit False
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jaeger
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tracing
+  source:
+    repoURL: https://jaegertracing.github.io/helm-charts
+    chart: jaeger
+    targetRevision: 3.4.1
+    helm:
+      values: |
+        provisionDataStore:
+          cassandra: false
+          elasticsearch: false
+        storage:
+          type: memory
+        ingress:
+          enabled: true
+          className: nginx
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-http
+            nginx.ingress.kubernetes.io/ssl-redirect: "true"
+            nginx.ingress.kubernetes.io/hsts: "true"
+            nginx.ingress.kubernetes.io/hsts-max-age: "31536000"
+          hosts:
+            - ${HOST_TRACE}
+          tls:
+            - secretName: trace-tls
+              hosts:
+                - ${HOST_TRACE}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: network-policies
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod
+  source:
+    repoURL: ${ARGO_REPO_URL}
+    path: manifests/network-policies
+    targetRevision: ${ARGO_TARGET_REVISION}
+    directory:
+      recurse: true
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  source:
+    repoURL: https://kyverno.github.io/kyverno
+    chart: kyverno
+    targetRevision: 3.5.2
+    helm:
+      values: |
+        replicaCount: 2
+        admissionController:
+          replicas: 2
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno-policies
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  source:
+    repoURL: ${ARGO_REPO_URL}
+    path: manifests/kyverno-policies
+    targetRevision: ${ARGO_TARGET_REVISION}
+    directory:
+      recurse: true
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kubernetes-dashboard
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kubernetes-dashboard
+  source:
+    repoURL: https://kubernetes.github.io/dashboard
+    chart: kubernetes-dashboard
+    targetRevision: 7.13.0
+    helm:
+      values: |
+        serviceAccount:
+          create: true
+          name: kubernetes-dashboard
+        rbac:
+          clusterAdminRole: true
+        ingress:
+          enabled: true
+          className: nginx
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-http
+            nginx.ingress.kubernetes.io/ssl-redirect: "true"
+            nginx.ingress.kubernetes.io/hsts: "true"
+            nginx.ingress.kubernetes.io/hsts-max-age: "31536000"
+          hosts:
+            - ${HOST_DASHBOARD}
+          tls:
+            - secretName: kubernetes-dashboard-tls
+              hosts:
+                - ${HOST_DASHBOARD}
+        metricsScraper:
+          enabled: true
+        protocolHttp: true
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+EOF
 }
+
+alert_config() {
+  case "$ALERT_MODE" in
+    telegram)
+      cat <<EOF
+    route:
+      receiver: telegram
+    receivers:
+      - name: telegram
+        telegram_configs:
+          - bot_token: "${TELEGRAM_BOT_TOKEN}"
+            chat_id: "${TELEGRAM_CHAT_ID}"
+EOF
+      ;;
+    email)
+      cat <<EOF
+    route:
+      receiver: email
+    receivers:
+      - name: email
+        email_configs:
+          - to: "${ALERT_EMAIL_TO}"
+            from: "${ALERT_EMAIL_FROM}"
+            smarthost: "${SMTP_HOST}:${SMTP_PORT}"
+            auth_username: "${SMTP_USER}"
+            auth_password: "${SMTP_PASS}"
+            require_tls: true
+EOF
+      ;;
+    *)
+      cat <<'EOF'
+    route:
+      receiver: devnull
+    receivers:
+      - name: devnull
+EOF
+      ;;
+  esac
+}
+
+wait_for_applications() {
+  wait_rollout prod statefulset postgres-prod-postgresql
+  wait_rollout test statefulset postgres-test-postgresql
+  wait_rollout prod deployment prod-web
+  wait_rollout prod deployment prod-api
+  wait_rollout test deployment test-web
+  wait_rollout test deployment test-api
+  wait_rollout observability deployment kube-prometheus-stack-grafana
+  wait_rollout logging statefulset opensearch-master
+  wait_rollout logging deployment opensearch-dashboards
+  kubectl -n logging rollout status daemonset/fluent-bit --timeout=10m || true
+  wait_rollout tracing deployment jaeger-query
+  wait_rollout kubernetes-dashboard deployment kubernetes-dashboard
+  wait_for_kyverno_deployments
+}
+
+wait_for_kyverno_deployments() {
+  local deployments
+  mapfile -t deployments < <(kubectl -n kyverno get deployments -o jsonpath='{range .items[*]}{.metadata.name}{"
+"}{end}' 2>/dev/null || true)
+  local deploy
+  for deploy in "${deployments[@]}"; do
+    if [[ -n "$deploy" ]]; then
+      wait_rollout kyverno deployment "$deploy"
+    fi
+  done
+}
+
 
 apply_ingress() {
   local name="$1" namespace="$2" host="$3" svc="$4" port="$5" tlsSecret="$6" extra_path="$7" extra_service="$8" extra_port="$9" annotations="${10}"
@@ -433,333 +882,13 @@ $(if [[ -n "$extra_block" ]]; then printf '%s\n' "$extra_block"; fi)
 EOI
 }
 
-install_observability() {
-  cat <<EOF > "$INSTALL_ROOT/kube-prometheus-values.yaml"
-alertmanager:
-  config:
-    global:
-      resolve_timeout: 5m
-$(alert_config)
-prometheus:
-  prometheusSpec:
-    retention: ${RETENTION_METRICS}d
-    storageSpec:
-      volumeClaimTemplate:
-        spec:
-          accessModes: ["ReadWriteOnce"]
-          resources:
-            requests:
-              storage: 20Gi
-grafana:
-  enabled: true
-  grafana.ini:
-    server:
-      root_url: https://${HOST_GRAFANA}
-      domain: ${HOST_GRAFANA}
-  persistence:
-    enabled: true
-    size: 5Gi
-  ingress:
-    enabled: false
-EOF
-
-  helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-    -n observability \
-    -f "$INSTALL_ROOT/kube-prometheus-values.yaml" \
-    --set grafana.service.type=ClusterIP \
-    --wait --timeout 20m
-
-  apply_ingress grafana observability "$HOST_GRAFANA" kube-prometheus-stack-grafana 80 grafana-tls "" "" "" ""
-}
-
-alert_config() {
-  case "$ALERT_MODE" in
-    telegram)
-      cat <<EOF
-    route:
-      receiver: telegram
-    receivers:
-      - name: telegram
-        telegram_configs:
-          - bot_token: "${TELEGRAM_BOT_TOKEN}"
-            chat_id: "${TELEGRAM_CHAT_ID}"
-EOF
-      ;;
-    email)
-      cat <<EOF
-    route:
-      receiver: email
-    receivers:
-      - name: email
-        email_configs:
-          - to: "${ALERT_EMAIL_TO}"
-            from: "${ALERT_EMAIL_FROM}"
-            smarthost: "${SMTP_HOST}:${SMTP_PORT}"
-            auth_username: "${SMTP_USER}"
-            auth_password: "${SMTP_PASS}"
-            require_tls: true
-EOF
-      ;;
-    *)
-      cat <<'EOF'
-    route:
-      receiver: devnull
-    receivers:
-      - name: devnull
-EOF
-      ;;
-  esac
-}
-
-install_logging() {
-  cat <<EOF > "$INSTALL_ROOT/opensearch-values.yaml"
-singleNode: true
-persistence:
-  size: 20Gi
-resources:
-  requests:
-    cpu: 200m
-    memory: 1Gi
-  limits:
-    cpu: 1
-    memory: 4Gi
-config:
-  opensearch.yml: |
-    plugins.security.disabled: true
-    cluster.routing.allocation.disk.threshold_enabled: false
-EOF
-
-  helm upgrade --install opensearch opensearch/opensearch -n logging -f "$INSTALL_ROOT/opensearch-values.yaml" --wait --timeout 20m
-
-  cat <<EOF > "$INSTALL_ROOT/opensearch-dashboards-values.yaml"
-opensearchHosts: "http://opensearch-master.logging.svc.cluster.local:9200"
-service:
-  type: ClusterIP
-persistence:
-  enabled: true
-  size: 5Gi
-EOF
-
-  helm upgrade --install opensearch-dashboards opensearch/opensearch-dashboards -n logging -f "$INSTALL_ROOT/opensearch-dashboards-values.yaml" --wait --timeout 15m
-
-  apply_ingress logs logging "$HOST_LOGS" opensearch-dashboards 5601 logs-tls "" "" "" ""
-
-  cat <<EOF > "$INSTALL_ROOT/fluent-bit-values.yaml"
-serviceAccount:
-  create: true
-config:
-  service: |
-    [SERVICE]
-        Daemon Off
-        Flush 1
-        Log_Level info
-        Parsers_File /fluent-bit/etc/parsers.conf
-        Parsers_File /fluent-bit/etc/conf/custom_parsers.conf
-        HTTP_Server On
-        HTTP_Listen 0.0.0.0
-        HTTP_Port 2020
-        Health_Check On
-  inputs: |
-    [INPUT]
-        Name tail
-        Path /var/log/containers/*.log
-        multiline.parser docker
-        Tag kube.*
-        Mem_Buf_Limit 5MB
-        Skip_Long_Lines On
-  filters: |
-    [FILTER]
-        Name kubernetes
-        Match kube.*
-        Kube_URL https://kubernetes.default.svc:443
-        Kube_Tag_Prefix kube.var.log.containers.
-        Merge_Log On
-        Keep_Log Off
-        Labels On
-        Annotations Off
-  outputs: |
-    [OUTPUT]
-        Name  es
-        Match *
-        Host  opensearch-master.logging.svc.cluster.local
-        Port  9200
-        HTTPS Off
-        Logstash_Format On
-        Logstash_Prefix fluentbit
-        Replace_Dots On
-        Retry_Limit False
-EOF
-
-  helm upgrade --install fluent-bit fluent/fluent-bit -n logging -f "$INSTALL_ROOT/fluent-bit-values.yaml" --wait --timeout 10m
-}
-
-install_tracing() {
-  helm upgrade --install jaeger jaegertracing/jaeger -n tracing \
-    --set provisionDataStore.cassandra=false \
-    --set provisionDataStore.elasticsearch=false \
-    --set storage.type=memory \
-    --wait --timeout 10m
-  apply_ingress trace tracing "$HOST_TRACE" jaeger-query 16686 trace-tls "" "" "" ""
-}
-
-apply_network_policies() {
-  cat <<'EOFNP' | kubectl apply -f -
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-all
-  namespace: prod
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-    - Egress
-EOFNP
-
-  cat <<'EOFNP' | kubectl apply -f -
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-prod-web
-  namespace: prod
-spec:
-  podSelector:
-    matchLabels:
-      app: prod-web
-  ingress:
-    - from: []
-      ports:
-        - port: 80
-  egress:
-    - to: []
-      ports:
-        - port: 53
-          protocol: UDP
-EOFNP
-
-  cat <<'EOFNP' | kubectl apply -f -
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-prod-api-from-ingress-and-web
-  namespace: prod
-spec:
-  podSelector:
-    matchLabels:
-      app: prod-api
-  policyTypes: ["Ingress"]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
-        - podSelector:
-            matchLabels:
-              app: prod-web
-      ports:
-        - port: 8080
-EOFNP
-
-  cat <<'EOFNP' | kubectl apply -f -
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-prod-api-to-postgres-and-dns
-  namespace: prod
-spec:
-  podSelector:
-    matchLabels:
-      app: prod-api
-  policyTypes: ["Egress"]
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: prod
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/instance: postgres-prod
-      ports:
-        - port: 5432
-    - to: []
-      ports:
-        - port: 53
-          protocol: UDP
-EOFNP
-}
-
-install_kyverno() {
-  if ! kubectl get deploy -n kyverno kyverno >/dev/null 2>&1; then
-    kubectl apply -f https://github.com/kyverno/kyverno/releases/latest/download/install.yaml
-  fi
-  kubectl -n kyverno rollout status deployment/kyverno --timeout=10m
-
-  cat <<'EOCPOL' | kubectl apply -f -
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
-metadata:
-  name: disallow-privileged
-spec:
-  validationFailureAction: enforce
-  background: true
-  rules:
-    - name: check-privileged
-      match:
-        resources:
-          kinds:
-            - Pod
-      validate:
-        message: Privileged containers are not allowed.
-        pattern:
-          spec:
-            containers:
-              - =(securityContext):
-                  =(privileged): false
-EOCPOL
-
-  cat <<'EOCPOL' | kubectl apply -f -
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
-metadata:
-  name: require-runasnonroot
-spec:
-  validationFailureAction: enforce
-  background: true
-  rules:
-    - name: run-as-non-root
-      match:
-        resources:
-          kinds:
-            - Pod
-      exclude:
-        resources:
-          namespaces:
-            - kube-system
-            - kube-public
-            - kyverno
-            - cert-manager
-            - ingress-nginx
-            - argocd
-      validate:
-        message: Containers must set runAsNonRoot true.
-        anyPattern:
-          - spec:
-              securityContext:
-                runAsNonRoot: true
-          - spec:
-              containers:
-                - securityContext:
-                    runAsNonRoot: true
-EOCPOL
-}
-
 wait_rollout() {
   local ns="$1" kind="$2" name="$3"
   kubectl -n "$ns" rollout status "$kind"/"$name" --timeout=10m || true
 }
 
 wait_for_certificates() {
-  local namespaces=(argocd prod test observability logging tracing)
+  local namespaces=(argocd prod test observability logging tracing kubernetes-dashboard)
   local ns cert
   for ns in "${namespaces[@]}"; do
     for cert in $(kubectl -n "$ns" get certificates.cert-manager.io -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
@@ -783,11 +912,13 @@ Public endpoints:
   Trace   : https://${HOST_TRACE}
   PROD    : https://${HOST_SITE}
   TEST    : https://${HOST_TEST}
+  K8s UI  : https://${HOST_DASHBOARD}
 
 Credentials:
   Argo CD admin password: ${ARGO_PWD}
   PostgreSQL PROD DSN: postgresql://app:${POSTGRES_PASSWORD_PROD}@postgres-prod-postgresql.prod.svc.cluster.local:5432/appdb
   PostgreSQL TEST DSN: postgresql://app:${POSTGRES_PASSWORD_TEST}@postgres-test-postgresql.test.svc.cluster.local:5432/appdb
+  Kubernetes dashboard token: kubectl -n kubernetes-dashboard create token kubernetes-dashboard
 
 Health checks:
   curl -k https://${HOST_SITE}/api/health
