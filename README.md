@@ -1,6 +1,6 @@
 # Argo CD Applications
 
-This repository defines the Argo CD applications that deliver the backend service and the PostgreSQL databases for the `prod` and `test` environments. It also provides an installation helper that can be used to bootstrap a complete k3s-based platform for these applications.
+This repository defines the Argo CD applications that deliver the backend service and the PostgreSQL databases for the `prod` and `test` environments. It also provides an interactive installation helper that can bootstrap a complete k3s-based platform for these applications on a fresh Linux server.
 
 ## Application layout
 
@@ -43,4 +43,21 @@ Remember to update the placeholder passwords in the secrets before performing a 
 
 ## Full platform bootstrap
 
-Run `full_stack_one_liner.sh` to print the single-line `sudo bash -s <<'EOF' ... EOF` command that provisions k3s, ingress, GitOps, databases, observability, backups, and security tooling exactly as described in the deployment checklist. The generated command is idempotent and prompts for the minimal set of runtime parameters (ACME email, domain mode, alert destinations, and S3 credentials) before applying the manifests.
+### One-command bootstrap
+
+1. Clone the repository onto the target server and change into the repository directory.
+
+   ```bash
+   git clone <repository-url>
+   cd k8s
+   ```
+
+2. Execute the installer. The script escalates to root when required and asks for the information it cannot discover automatically (public hosts, alerting channel, Velero S3 credentials, etc.). Defaults are provided for sslip.io domains and optional features.
+
+   ```bash
+   sudo bash scripts/install.sh
+   ```
+
+3. Wait for the components to finish installing. Once the script exits, it prints the URLs and credentials for Argo CD, Grafana, Jaeger, OpenSearch Dashboards, and the demo prod/test applications.
+
+The installer is idempotent and can be re-run to recover from partial failures. It expects a clean machine with outbound internet access and installs k3s, ingress-nginx, cert-manager, Argo CD, PostgreSQL (prod/test), Prometheus, Grafana, OpenSearch, Fluent Bit, Jaeger, Velero, and Kyverno according to the topology outlined in the project description.
