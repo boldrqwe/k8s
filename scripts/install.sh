@@ -402,7 +402,7 @@ metadata:
     nginx.ingress.kubernetes.io/hsts-max-age: "31536000"
     nginx.ingress.kubernetes.io/proxy-body-size: "32m"
     nginx.ingress.kubernetes.io/server-snippet: |
-      add_header Content-Security-Policy "default-src 'self'; connect-src 'self' https:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none';" always;
+      add_header Content-Security-Policy "default-src 'self'; connect-src 'self' https:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; frame-ancestors 'none';" always;
       add_header Referrer-Policy strict-origin-when-cross-origin always;
       add_header X-Content-Type-Options nosniff always;
       add_header X-Frame-Options SAMEORIGIN always;
@@ -577,8 +577,8 @@ config:
           Host  opensearch-master.logging.svc.cluster.local
           Port  9200
           HTTPS Off
-          Index fluentbit
           Logstash_Format On
+          Logstash_Prefix fluentbit
           Replace_Dots On
           Retry_Limit False
 EOF
