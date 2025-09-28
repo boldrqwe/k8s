@@ -548,41 +548,46 @@ EOF
 serviceAccount:
   create: true
 config:
-  service:
-    flush: 1
-    log_level: info
-  inputs:
-    tail.conf: |
-      [INPUT]
-          Name tail
-          Path /var/log/containers/*.log
-          multiline.parser docker
-          Tag kube.*
-          Mem_Buf_Limit 5MB
-          Skip_Long_Lines On
-  filters:
-    kubernetes.conf: |
-      [FILTER]
-          Name kubernetes
-          Match kube.*
-          Kube_URL https://kubernetes.default.svc:443
-          Kube_Tag_Prefix kube.var.log.containers.
-          Merge_Log On
-          Keep_Log Off
-          Labels On
-          Annotations Off
-  outputs:
-    opensearch.conf: |
-      [OUTPUT]
-          Name  es
-          Match *
-          Host  opensearch-master.logging.svc.cluster.local
-          Port  9200
-          HTTPS Off
-          Logstash_Format On
-          Logstash_Prefix fluentbit
-          Replace_Dots On
-          Retry_Limit False
+  service: |
+    [SERVICE]
+        Daemon Off
+        Flush 1
+        Log_Level info
+        Parsers_File /fluent-bit/etc/parsers.conf
+        Parsers_File /fluent-bit/etc/conf/custom_parsers.conf
+        HTTP_Server On
+        HTTP_Listen 0.0.0.0
+        HTTP_Port 2020
+        Health_Check On
+  inputs: |
+    [INPUT]
+        Name tail
+        Path /var/log/containers/*.log
+        multiline.parser docker
+        Tag kube.*
+        Mem_Buf_Limit 5MB
+        Skip_Long_Lines On
+  filters: |
+    [FILTER]
+        Name kubernetes
+        Match kube.*
+        Kube_URL https://kubernetes.default.svc:443
+        Kube_Tag_Prefix kube.var.log.containers.
+        Merge_Log On
+        Keep_Log Off
+        Labels On
+        Annotations Off
+  outputs: |
+    [OUTPUT]
+        Name  es
+        Match *
+        Host  opensearch-master.logging.svc.cluster.local
+        Port  9200
+        HTTPS Off
+        Logstash_Format On
+        Logstash_Prefix fluentbit
+        Replace_Dots On
+        Retry_Limit False
 EOF
 
   helm upgrade --install fluent-bit fluent/fluent-bit -n logging -f "$INSTALL_ROOT/fluent-bit-values.yaml" --wait --timeout 10m
