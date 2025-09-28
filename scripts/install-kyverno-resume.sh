@@ -36,7 +36,19 @@ install_kyverno_manifests() {
   trap 'rm -f "$tmp"' RETURN
 
   kubectl apply --server-side --force-conflicts -f "$tmp"
-  kubectl -n kyverno rollout status deployment/kyverno --timeout=10m
+
+  mapfile -t deployments < <(kubectl -n kyverno get deployments -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+
+  if [[ ${#deployments[@]} -eq 0 ]]; then
+    echo "[ERROR] No Kyverno deployments were found in the 'kyverno' namespace." >&2
+    echo "        Check the manifest at $manifest_url and try again." >&2
+    exit 1
+  fi
+
+  local deploy
+  for deploy in "${deployments[@]}"; do
+    kubectl -n kyverno rollout status "deployment/${deploy}" --timeout=10m
+  done
 }
 
 apply_baseline_policies() {
