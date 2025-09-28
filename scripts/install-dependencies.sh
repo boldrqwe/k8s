@@ -103,11 +103,22 @@ install_kubectl() {
 
 install_kubectl_apt() {
   local version="$1"
-  curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg \
-    "https://pkgs.k8s.io/core:/stable:/${version}/deb/Release.key"
+  local keyring="/etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+
+  install -m 0755 -d /etc/apt/keyrings
+
+  (
+    set -euo pipefail
+    tmp_key="$(mktemp)"
+    trap 'rm -f "$tmp_key"' EXIT
+    curl -fsSL "https://pkgs.k8s.io/core:/stable:/${version}/deb/Release.key" -o "$tmp_key"
+    gpg --yes --dearmor -o "$keyring" "$tmp_key"
+  )
+
+  chmod 0644 "$keyring"
+
   cat <<EOF_LIST >/etc/apt/sources.list.d/kubernetes.list
-deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] \
-https://pkgs.k8s.io/core:/stable:/${version}/deb/ /
+deb [signed-by=$keyring] https://pkgs.k8s.io/core:/stable:/${version}/deb/ /
 EOF_LIST
   apt-get update
   apt-get install -y kubectl
