@@ -12,6 +12,7 @@
 | Сервис | URL | Namespace | Примечание |
 |---|---|---|---|
 | **Argo CD** | https://argo.79.174.84.176.sslip.io | `argocd` | Первый вход — см. ниже |
+| **Kubernetes Dashboard** | https://k8s.79.174.84.176.sslip.io | `kubernetes-dashboard` | Логин по токену service account |
 | **Grafana** | https://grafana.79.174.84.176.sslip.io | `observability` | Одна Grafana для prod+test |
 | **Логи (OpenSearch Dashboards)** | https://logs.79.174.84.176.sslip.io | `logging` | Индексы: `fluentbit*` |
 | **Трейсы (Jaeger UI)** | https://trace.79.174.84.176.sslip.io | `tracing` | In-memory хранилище |
@@ -36,21 +37,17 @@ curl -fsSL https://raw.githubusercontent.com/<org>/<repo>/main/scripts/install-d
 sudo ./scripts/install-dependencies.sh
 ```
 
+> Основной установочный скрипт попросит указать Git-репозиторий и ветку, из которых Argo CD будет забирать манифесты. Если вы запускаете установку из локального клона, эти значения подставятся автоматически из `git remote origin`. При запуске через `curl` убедитесь, что указанный репозиторий доступен кластеру по HTTPS.
+
 ### Если установка остановилась на Kyverno
 
-Иногда при применении манифестов Kyverno через `kubectl apply` возникает ошибка вида:
-
-```
-CustomResourceDefinition.apiextensions.k8s.io "clusterpolicies.kyverno.io" is invalid: metadata.annotations: Too long
-```
-
-Чтобы продолжить установку без повторного запуска уже пройденных этапов, воспользуйтесь скриптом [`scripts/install-kyverno-resume.sh`](scripts/install-kyverno-resume.sh). Он применяет официальный манифест Kyverno в режиме *server-side apply*, дожидается развёртывания контроллеров, устанавливает базовые политики и формирует итоговое резюме по доступам.
+Теперь установка Kyverno и базовых политик выполняется через Argo CD. Если по каким-то причинам приложения `kyverno` или `kyverno-policies` в Argo оказались в состоянии `OutOfSync`, воспользуйтесь скриптом [`scripts/install-kyverno-resume.sh`](scripts/install-kyverno-resume.sh). Он принудительно обновит соответствующие Argo CD приложения, дождётся развёртывания контроллеров и соберёт итоговое резюме по доступам.
 
 ```bash
 sudo ./scripts/install-kyverno-resume.sh
 ```
 
-Скрипт можно запускать повторно — он идемпотентен.
+Скрипт можно запускать повторно — он просто инициирует повторный sync в Argo CD.
 
 ---
 
@@ -77,6 +74,9 @@ argocd login argo.79.174.84.176.sslip.io --username admin --password "$(kubectl 
 
 # Grafana admin password:
 kubectl -n observability get secret kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' | base64 -d; echo
+
+# Kubernetes dashboard token:
+kubectl -n kubernetes-dashboard create token kubernetes-dashboard
 
 # PostgreSQL DSN (внутри кластера):
 # PROD
