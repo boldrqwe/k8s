@@ -24,6 +24,18 @@
 
 > При необходимости добавьте также **pgAdmin**: `https://pgadmin.79.174.84.176.sslip.io` (ns `db-tools`).
 
+## Подготовка окружения
+
+Перед запуском основного скрипта [`scripts/install.sh`](scripts/install.sh) выполните установку системных зависимостей (CLI-инструменты, бинарники `kubectl`/`helm`, утилита `argocd`) при помощи помощника [`scripts/install-dependencies.sh`](scripts/install-dependencies.sh). Скрипт автоматически определит пакетный менеджер (APT/YUM/DNF/Zypper) и поставит требуемые пакеты.
+
+```bash
+# Одноразовый запуск без клонирования (замените <org>/<repo> на актуальные значения)
+curl -fsSL https://raw.githubusercontent.com/<org>/<repo>/main/scripts/install-dependencies.sh | bash
+
+# или, находясь в корне репозитория
+sudo ./scripts/install-dependencies.sh
+```
+
 ---
 
 ## 2) Окружения и состав
