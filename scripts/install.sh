@@ -205,7 +205,7 @@ install_argocd() {
     kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGO_VERSION}/manifests/install.yaml"
   fi
   kubectl -n argocd rollout status deployment/argocd-server --timeout=10m
-  apply_ingress argocd argocd "$HOST_ARGO" argocd-server 443 argocd-tls "" "nginx.ingress.kubernetes.io/backend-protocol: \"HTTPS\""
+  apply_ingress argocd argocd "$HOST_ARGO" argocd-server 443 argocd-tls "" "" "" "nginx.ingress.kubernetes.io/backend-protocol: \"HTTPS\""
 }
 
 install_helm_if_missing() {
@@ -256,8 +256,8 @@ create_pg() {
 deploy_demo_sites() {
   create_static_site prod prod "User-agent: *\nAllow: /" "$HOST_SITE"
   create_static_site test test "User-agent: *\nDisallow: /" "$HOST_TEST"
-  apply_ingress prod-site prod "$HOST_SITE" prod-web 80 prod-site-tls "          - path: /api\n            pathType: Prefix\n            backend:\n              service:\n                name: prod-api\n                port:\n                  number: 80" ""
-  apply_ingress test-site test "$HOST_TEST" test-web 80 test-site-tls "          - path: /api\n            pathType: Prefix\n            backend:\n                service:\n                  name: test-api\n                  port:\n                    number: 80" ""
+  apply_ingress prod-site prod "$HOST_SITE" prod-web 80 prod-site-tls "/api" "prod-api" 80 ""
+  apply_ingress test-site test "$HOST_TEST" test-web 80 test-site-tls "/api" "test-api" 80 ""
 }
 
 create_static_site() {
@@ -381,10 +381,22 @@ EOSVC
 }
 
 apply_ingress() {
-  local name="$1" namespace="$2" host="$3" svc="$4" port="$5" tlsSecret="$6" extra="$7" annotations="$8"
-  local formatted_annotations=""
+  local name="$1" namespace="$2" host="$3" svc="$4" port="$5" tlsSecret="$6" extra_path="$7" extra_service="$8" extra_port="$9" annotations="${10}"
+  local formatted_annotations="" extra_block=""
   if [[ -n "$annotations" ]]; then
     formatted_annotations="$(printf '%s\n' "$annotations" | sed 's/^/    /')"
+  fi
+  if [[ -n "$extra_path" && -n "$extra_service" && -n "$extra_port" ]]; then
+    extra_block="$(cat <<EOF
+          - path: ${extra_path}
+            pathType: Prefix
+            backend:
+              service:
+                name: ${extra_service}
+                port:
+                  number: ${extra_port}
+EOF
+)"
   fi
   cat <<EOI | kubectl apply -f -
 apiVersion: networking.k8s.io/v1
@@ -417,7 +429,7 @@ spec:
                 name: ${svc}
                 port:
                   number: ${port}
-${extra}
+$(if [[ -n "$extra_block" ]]; then printf '%s\n' "$extra_block"; fi)
 EOI
 }
 
@@ -457,7 +469,7 @@ EOF
     --set grafana.service.type=ClusterIP \
     --wait --timeout 20m
 
-  apply_ingress grafana observability "$HOST_GRAFANA" kube-prometheus-stack-grafana 80 grafana-tls "" ""
+  apply_ingress grafana observability "$HOST_GRAFANA" kube-prometheus-stack-grafana 80 grafana-tls "" "" "" ""
 }
 
 alert_config() {
@@ -530,7 +542,7 @@ EOF
 
   helm upgrade --install opensearch-dashboards opensearch/opensearch-dashboards -n logging -f "$INSTALL_ROOT/opensearch-dashboards-values.yaml" --wait --timeout 15m
 
-  apply_ingress logs logging "$HOST_LOGS" opensearch-dashboards 5601 logs-tls "" ""
+  apply_ingress logs logging "$HOST_LOGS" opensearch-dashboards 5601 logs-tls "" "" "" ""
 
   cat <<EOF > "$INSTALL_ROOT/fluent-bit-values.yaml"
 serviceAccount:
@@ -582,7 +594,7 @@ install_tracing() {
     --set provisionDataStore.elasticsearch=false \
     --set storage.type=memory \
     --wait --timeout 10m
-  apply_ingress trace tracing "$HOST_TRACE" jaeger-query 16686 trace-tls "" ""
+  apply_ingress trace tracing "$HOST_TRACE" jaeger-query 16686 trace-tls "" "" "" ""
 }
 
 apply_network_policies() {
