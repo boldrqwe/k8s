@@ -1,6 +1,0 @@
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata: { name: frontend }
-spec:
-  rules:
-    - host: test.79.174.84.176.sslip.io
