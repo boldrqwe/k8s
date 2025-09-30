@@ -15,7 +15,7 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
+        runAsUser: 101
       containers:
         - name: web
           image: ghcr.io/boldrqwe/instructions_front:latest
@@ -23,15 +23,15 @@ spec:
             - containerPort: 80
           securityContext:
             runAsNonRoot: true
-            runAsUser: 101   # nginx в alpine обычно uid 101
+            runAsUser: 101
             allowPrivilegeEscalation: false
           volumeMounts:
             - name: cache
               mountPath: /var/cache/nginx
             - name: run
               mountPath: /var/run
-          volumes:
-            - name: cache
-              emptyDir: { }
-            - name: run
-              emptyDir: { }
+      volumes:
+        - name: cache
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
