@@ -12,6 +12,7 @@
 | Сервис | URL | Namespace | Примечание |
 |---|---|---|---|
 | **Argo CD** | https://argo.79.174.84.176.sslip.io | `argocd` | Первый вход — см. ниже |
+| **Kubernetes Dashboard** | https://k8s.79.174.84.176.sslip.io | `kubernetes-dashboard` | Логин по токену service account |
 | **Grafana** | https://grafana.79.174.84.176.sslip.io | `observability` | Одна Grafana для prod+test |
 | **Логи (OpenSearch Dashboards)** | https://logs.79.174.84.176.sslip.io | `logging` | Индексы: `fluentbit*` |
 | **Трейсы (Jaeger UI)** | https://trace.79.174.84.176.sslip.io | `tracing` | In-memory хранилище |
@@ -23,6 +24,40 @@
 | **Redis UI** *(если установлен)* | https://redis.79.174.84.176.sslip.io | `redis` | Управление ключами |
 
 > При необходимости добавьте также **pgAdmin**: `https://pgadmin.79.174.84.176.sslip.io` (ns `db-tools`).
+
+## Argo CD
+
+Применить Argo CD приложения можно командой:
+
+```bash
+kubectl apply -n argocd -f argocd/apps/
+```
+
+UI доступен по ссылке: https://argo.79.174.84.176.sslip.io
+
+## Подготовка окружения
+
+Перед запуском основного скрипта [`scripts/install.sh`](scripts/install.sh) выполните установку системных зависимостей (CLI-инструменты, бинарники `kubectl`/`helm`, утилита `argocd`) при помощи помощника [`scripts/install-dependencies.sh`](scripts/install-dependencies.sh). Скрипт автоматически определит пакетный менеджер (APT/YUM/DNF/Zypper) и поставит требуемые пакеты.
+
+```bash
+# Одноразовый запуск без клонирования (замените <org>/<repo> на актуальные значения)
+curl -fsSL https://raw.githubusercontent.com/<org>/<repo>/main/scripts/install-dependencies.sh | bash
+
+# или, находясь в корне репозитория
+sudo ./scripts/install-dependencies.sh
+```
+
+> Основной установочный скрипт попросит указать Git-репозиторий и ветку, из которых Argo CD будет забирать манифесты. Если вы запускаете установку из локального клона, эти значения подставятся автоматически из `git remote origin`. При запуске через `curl` убедитесь, что указанный репозиторий доступен кластеру по HTTPS.
+
+### Если установка остановилась на Kyverno
+
+Теперь установка Kyverno и базовых политик выполняется через Argo CD. Если по каким-то причинам приложения `kyverno` или `kyverno-policies` в Argo оказались в состоянии `OutOfSync`, воспользуйтесь скриптом [`scripts/install-kyverno-resume.sh`](scripts/install-kyverno-resume.sh). Он принудительно обновит соответствующие Argo CD приложения, дождётся развёртывания контроллеров и соберёт итоговое резюме по доступам.
+
+```bash
+sudo ./scripts/install-kyverno-resume.sh
+```
+
+Скрипт можно запускать повторно — он просто инициирует повторный sync в Argo CD.
 
 ---
 
@@ -41,37 +76,22 @@
 ## 3) Доступ и DSN
 
 ```bash
-bash <<'EOF'
-# Inputs
-ARGO_HOST="argo.79.174.84.176.sslip.io"
+# Argo CD admin password:
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
 
-# Grab secrets (silently); fall back to N/A if missing
-ARGO_PWD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
-[ -n "$ARGO_PWD" ] || ARGO_PWD="N/A"
+# Вход в ArgoCD CLI (если установлен argocd):
+argocd login argo.79.174.84.176.sslip.io --username admin --password "$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)" --grpc-web
 
-GRAF_PWD=$(kubectl -n observability get secret kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || true)
-[ -n "$GRAF_PWD" ] || GRAF_PWD="N/A"
+# Grafana admin password:
+kubectl -n observability get secret kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' | base64 -d; echo
 
-PGPASS_PROD=$(kubectl -n prod get secret app-postgres-prod -o jsonpath='{.data.postgres-password}' 2>/dev/null | base64 -d 2>/dev/null || true)
-[ -n "$PGPASS_PROD" ] || PGPASS_PROD="N/A"
+# Kubernetes dashboard token:
+kubectl -n kubernetes-dashboard create token kubernetes-dashboard
 
-PGPASS_TEST=$(kubectl -n test get secret app-postgres-test -o jsonpath='{.data.postgres-password}' 2>/dev/null | base64 -d 2>/dev/null || true)
-[ -n "$PGPASS_TEST" ] || PGPASS_TEST="N/A"
-
-# Print creds and DSNs
-echo "Argo CD admin password: $ARGO_PWD"
-echo "Grafana admin password: $GRAF_PWD"
-echo "PostgreSQL PROD DSN: postgresql://app:${PGPASS_PROD}@postgres-prod-postgresql.prod.svc.cluster.local:5432/appdb"
-echo "PostgreSQL TEST DSN: postgresql://app:${PGPASS_TEST}@postgres-test-postgresql.test.svc.cluster.local:5432/appdb"
-
-# Try ArgoCD CLI login if possible
-if command -v argocd >/dev/null 2>&1 && [ "$ARGO_PWD" != "N/A" ]; then
-  if argocd login "$ARGO_HOST" --username admin --password "$ARGO_PWD" --grpc-web >/dev/null 2>&1; then
-    echo "ArgoCD CLI login: OK ($ARGO_HOST)"
-  else
-    echo "ArgoCD CLI login: FAILED ($ARGO_HOST)"
-  fi
-else
-  echo "ArgoCD CLI login: skipped (argocd CLI not found or password N/A)"
-fi
-EOF
+# PostgreSQL DSN (внутри кластера):
+# PROD
+export PGPASS_PROD=$(kubectl -n prod get secret app-postgres-prod -o jsonpath='{.data.postgres-password}' | base64 -d)
+echo "postgresql://app:${PGPASS_PROD}@postgres-prod-postgresql.prod.svc.cluster.local:5432/appdb"
+# TEST
+export PGPASS_TEST=$(kubectl -n test get secret app-postgres-test -o jsonpath='{.data.postgres-password}' | base64 -d)
+echo "postgresql://app:${PGPASS_TEST}@postgres-test-postgresql.test.svc.cluster.local:5432/appdb"
