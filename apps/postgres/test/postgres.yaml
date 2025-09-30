@@ -1,10 +1,10 @@
 ---
 # NetworkPolicy
-kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
 metadata:
-  name: postgres-test-postgresql        # <== test вместо prod
-  namespace: "test"                     # <== namespace test
+  name: postgres-test-postgresql
+  namespace: test
   labels:
     app.kubernetes.io/instance: postgres-test
     app.kubernetes.io/managed-by: Helm
@@ -18,9 +18,7 @@ spec:
       app.kubernetes.io/instance: postgres-test
       app.kubernetes.io/name: postgresql
       app.kubernetes.io/component: primary
-  policyTypes:
-    - Ingress
-    - Egress
+  policyTypes: [Ingress, Egress]
   egress:
     - {}
   ingress:
@@ -32,7 +30,7 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: postgres-test-postgresql
-  namespace: "test"
+  namespace: test
   labels:
     app.kubernetes.io/instance: postgres-test
     app.kubernetes.io/managed-by: Helm
@@ -53,7 +51,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: postgres-test-postgresql
-  namespace: "test"
+  namespace: test
   labels:
     app.kubernetes.io/instance: postgres-test
     app.kubernetes.io/managed-by: Helm
@@ -62,12 +60,12 @@ metadata:
     helm.sh/chart: postgresql-16.7.27
 automountServiceAccountToken: false
 ---
-# Service (headless)
+# Headless Service
 apiVersion: v1
 kind: Service
 metadata:
   name: postgres-test-postgresql-hl
-  namespace: "test"
+  namespace: test
   labels:
     app.kubernetes.io/instance: postgres-test
     app.kubernetes.io/managed-by: Helm
@@ -88,12 +86,12 @@ spec:
     app.kubernetes.io/name: postgresql
     app.kubernetes.io/component: primary
 ---
-# Service (normal)
+# ClusterIP Service
 apiVersion: v1
 kind: Service
 metadata:
   name: postgres-test-postgresql
-  namespace: "test"
+  namespace: test
   labels:
     app.kubernetes.io/instance: postgres-test
     app.kubernetes.io/managed-by: Helm
@@ -118,7 +116,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres-test-postgresql
-  namespace: "test"
+  namespace: test
   labels:
     app.kubernetes.io/instance: postgres-test
     app.kubernetes.io/managed-by: Helm
@@ -129,13 +127,13 @@ metadata:
 spec:
   replicas: 1
   serviceName: postgres-test-postgresql-hl
-  updateStrategy:
-    type: RollingUpdate
   selector:
     matchLabels:
       app.kubernetes.io/instance: postgres-test
       app.kubernetes.io/name: postgresql
       app.kubernetes.io/component: primary
+  updateStrategy:
+    type: RollingUpdate
   template:
     metadata:
       name: postgres-test-postgresql
@@ -150,13 +148,45 @@ spec:
       serviceAccountName: postgres-test-postgresql
       securityContext:
         fsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgresql
           image: docker.io/bitnami/postgresql:17.6.0-debian-12-r4
+          imagePullPolicy: IfNotPresent
           ports:
             - name: tcp-postgresql
               containerPort: 5432
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ "ALL" ]
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsGroup: 1001
+            runAsNonRoot: true
+            runAsUser: 1001
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           env:
+            - name: BITNAMI_DEBUG
+              value: "false"
+            - name: POSTGRESQL_PORT_NUMBER
+              value: "5432"
+            - name: POSTGRESQL_VOLUME_DIR
+              value: "/bitnami/postgresql"
+            - name: PGDATA
+              value: "/bitnami/postgresql/data"
+            # --- аутентификация
             - name: POSTGRES_USER
               value: "app"
             - name: POSTGRES_DATABASE
@@ -165,6 +195,25 @@ spec:
               value: /opt/bitnami/postgresql/secrets/password
             - name: POSTGRES_POSTGRES_PASSWORD_FILE
               value: /opt/bitnami/postgresql/secrets/postgres-password
+          livenessProbe:
+            exec:
+              command: ["/bin/sh","-c","exec pg_isready -U app -d dbname=appdb -h 127.0.0.1 -p 5432"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - -e
+                - |
+                  exec pg_isready -U app -d dbname=appdb -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           volumeMounts:
             - name: postgresql-password
               mountPath: /opt/bitnami/postgresql/secrets/
@@ -173,13 +222,12 @@ spec:
       volumes:
         - name: postgresql-password
           secret:
-            secretName: app-postgres-test   # <== секрет для test
+            secretName: app-postgres-test   # секрет в namespace test
   volumeClaimTemplates:
     - metadata:
         name: data
       spec:
-        accessModes:
-          - "ReadWriteOnce"
+        accessModes: ["ReadWriteOnce"]
         resources:
           requests:
-            storage: "5Gi"                 # для теста можно меньше
+            storage: "5Gi"
