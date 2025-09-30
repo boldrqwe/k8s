@@ -13,11 +13,20 @@ spec:
       labels:
         app: prod-api
     spec:
+      securityContext:                # <--- на весь pod
+        runAsNonRoot: true
+        runAsUser: 1000               # UID не root
+        fsGroup: 1000
       containers:
         - name: api
           image: ghcr.io/boldrqwe/instructions:latest
           ports:
             - containerPort: 8080
+          securityContext:              # <--- на контейнер
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false  # если приложение пишет на диск — оставить false
           env:
             - name: SPRING_DATASOURCE_URL
               value: jdbc:postgresql://postgres-prod-postgresql:5432/appdb
