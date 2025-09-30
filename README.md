@@ -25,6 +25,16 @@
 
 > При необходимости добавьте также **pgAdmin**: `https://pgadmin.79.174.84.176.sslip.io` (ns `db-tools`).
 
+## Argo CD
+
+Применить Argo CD приложения можно командой:
+
+```bash
+kubectl apply -n argocd -f argocd/apps/
+```
+
+UI доступен по ссылке: https://argo.79.174.84.176.sslip.io
+
 ## Подготовка окружения
 
 Перед запуском основного скрипта [`scripts/install.sh`](scripts/install.sh) выполните установку системных зависимостей (CLI-инструменты, бинарники `kubectl`/`helm`, утилита `argocd`) при помощи помощника [`scripts/install-dependencies.sh`](scripts/install-dependencies.sh). Скрипт автоматически определит пакетный менеджер (APT/YUM/DNF/Zypper) и поставит требуемые пакеты.
