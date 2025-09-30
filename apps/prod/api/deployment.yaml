@@ -6,31 +6,44 @@ metadata:
 spec:
   replicas: 1
   selector:
-    matchLabels: { app: prod-api }
+    matchLabels:
+      app: prod-api
   template:
     metadata:
-      labels: { app: prod-api }
+      labels:
+        app: prod-api
     spec:
-      securityContext:            # <-- на Pod
+      securityContext:
         runAsNonRoot: true
         runAsUser: 1000
-        fsGroup: 1000
       containers:
-        - name: api
+        - name: backend
           image: ghcr.io/boldrqwe/instructions:latest
-          ports: [{ containerPort: 8080 }]
-          securityContext:          # <-- на контейнер
+          ports:
+            - containerPort: 8080
+          securityContext:
             runAsNonRoot: true
             runAsUser: 1000
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
           env:
-            - name: SPRING_DATASOURCE_URL
-              value: jdbc:postgresql://postgres-prod-postgresql:5432/appdb
-            - name: SPRING_DATASOURCE_USERNAME
-              value: app
-            - name: SPRING_DATASOURCE_PASSWORD
+            - name: PORT
+              value: "8080"
+
+            # --- DATABASE ---
+            - name: DB_HOST
+              value: postgres-prod-postgresql
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: instructions
+            - name: DB_USERNAME
+              value: postgres
+            - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: app-postgres-prod
-                  key: postgres-password
+                  name: app-postgres-prod   # секрет для prod
+                  key: postgres-password    # ключ с паролем
+
+            # --- CORS ---
+            - name: CORS_ALLOWED_ORIGINS
+              value: https://site.79.174.84.176.sslip.io
