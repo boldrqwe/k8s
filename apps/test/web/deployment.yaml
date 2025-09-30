@@ -13,8 +13,15 @@ spec:
       labels:
         app: test-web
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
       containers:
-        - name: frontend
+        - name: web
           image: ghcr.io/boldrqwe/instructions_front:latest
           ports:
             - containerPort: 80
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
