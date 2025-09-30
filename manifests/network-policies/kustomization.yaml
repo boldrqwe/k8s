@@ -1,4 +1,0 @@
-resources:
-  - prod-default-deny.yaml
-  - prod-allow-web.yaml
-  - prod-allow-api.yaml

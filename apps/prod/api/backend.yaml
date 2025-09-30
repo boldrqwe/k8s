@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prod-api
+  namespace: prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prod-api
+  template:
+    metadata:
+      labels:
+        app: prod-api
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/boldrqwe/instructions:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://postgres-prod-postgresql:5432/appdb
+            - name: SPRING_DATASOURCE_USERNAME
+              value: app
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-postgres-prod
+                  key: postgres-password
