@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prod-web
+  namespace: prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prod-web
+  template:
+    metadata:
+      labels:
+        app: prod-web
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/boldrqwe/instructions_front:latest
+          ports:
+            - containerPort: 80

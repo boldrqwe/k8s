@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-web
+  namespace: test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-web
+  template:
+    metadata:
+      labels:
+        app: test-web
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/boldrqwe/instructions_front:latest
+          ports:
+            - containerPort: 80
