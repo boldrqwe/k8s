@@ -151,7 +151,8 @@ spec:
         fsGroup: 1001
         runAsNonRoot: true
         runAsUser: 1001
-        supplementalGroups: [0]
+        runAsGroup: 0                 # (если политика разрешает)
+        supplementalGroups: [ 0 ]       # как минимум добавить в группы root
         seccompProfile:
           type: RuntimeDefault
       initContainers:
