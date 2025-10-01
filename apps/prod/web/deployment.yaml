@@ -6,24 +6,23 @@ metadata:
 spec:
   replicas: 1
   selector:
-    matchLabels:
-      app: prod-web
+    matchLabels: { app: prod-web }
   template:
     metadata:
-      labels:
-        app: prod-web
+      labels: { app: prod-web }
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 101          # у nginx в alpine UID = 101
+        runAsUser: 101
       containers:
         - name: web
-          image: ghcr.io/boldrqwe/instructions_front:latest
+          image: ghcr.io/boldrqwe/instructions_front:vX.Y.Z   # не latest!
           env:
             - name: VITE_API_BASE_URL
-              value: "https://site.79.174.84.176.sslip.io"
+              value: ""                                      # либо "/"; Ingress отдаёт /api
           ports:
-            - containerPort: 80
+            - name: http
+              containerPort: 8080
           securityContext:
             runAsNonRoot: true
             runAsUser: 101
