@@ -1,0 +1,46 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-http
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"networking.k8s.io/v1","kind":"Ingress","metadata":{"annotations":{"cert-manager.io/cluster-issuer":"letsencrypt-http","kubernetes.io/ingress.class":"nginx","nginx.ingress.kubernetes.io/hsts":"true","nginx.ingress.kubernetes.io/hsts-max-age":"31536000","nginx.ingress.kubernetes.io/proxy-body-size":"32m","nginx.ingress.kubernetes.io/ssl-redirect":"true"},"name":"prod-site","namespace":"prod"},"spec":{"ingressClassName":"nginx","rules":[{"host":"site.79.174.84.176.sslip.io","http":{"paths":[{"backend":{"service":{"name":"prod-web","port":{"number":80}}},"path":"/","pathType":"Prefix"},{"backend":{"service":{"name":"prod-api","port":{"number":80}}},"path":"/api","pathType":"Prefix"}]}}],"tls":[{"hosts":["site.79.174.84.176.sslip.io"],"secretName":"prod-site-tls"}]}}
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/hsts: "true"
+    nginx.ingress.kubernetes.io/hsts-max-age: "31536000"
+    nginx.ingress.kubernetes.io/proxy-body-size: 32m
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  creationTimestamp: "2025-09-28T14:50:17Z"
+  generation: 1
+  name: prod-site
+  namespace: prod
+  resourceVersion: "2208"
+  uid: 0209bacd-83b6-420c-be56-4fd85fa26a27
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: site.79.174.84.176.sslip.io
+    http:
+      paths:
+      - backend:
+          service:
+            name: prod-web
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+      - backend:
+          service:
+            name: prod-api
+            port:
+              number: 80
+        path: /api
+        pathType: Prefix
+  tls:
+  - hosts:
+    - site.79.174.84.176.sslip.io
+    secretName: prod-site-tls
+status:
+  loadBalancer:
+    ingress:
+    - ip: 192.168.0.112
