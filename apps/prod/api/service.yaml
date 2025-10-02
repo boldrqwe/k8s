@@ -10,3 +10,4 @@ spec:
     - protocol: TCP
       port: 80        # <-- сервисный порт (то, что видит Ingress)
       targetPort: 8080 # <-- реальный порт контейнера Spring Boot
+
