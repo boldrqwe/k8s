@@ -8,4 +8,4 @@ spec:
   ports:
     - name: http
       port: 80          # сюда смотрит Ingress
-      targetPort: 8080  # ПОРТ ВНУТРИ КОНТЕЙНЕРА
+      targetPort: 80
