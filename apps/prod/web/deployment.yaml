@@ -16,7 +16,7 @@ spec:
         runAsUser: 101
       containers:
         - name: web
-          image: ghcr.io/boldrqwe/instructions_front:vX.Y.Z   # не latest!
+          image: ghcr.io/boldrqwe/instructions_front:latest   # не latest!
           env:
             - name: VITE_API_BASE_URL
               value: ""                                      # либо "/"; Ingress отдаёт /api
