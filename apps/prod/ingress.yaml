@@ -26,14 +26,14 @@ spec:
           service:
             name: prod-web
             port:
-              number: 8080
+              number: 80
         path: /
         pathType: Prefix
       - backend:
           service:
             name: prod-api
             port:
-              number: 80
+              number: 8080
         path: /api
         pathType: Prefix
   tls:
