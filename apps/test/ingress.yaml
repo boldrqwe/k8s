@@ -33,7 +33,7 @@ spec:
           service:
             name: test-api
             port:
-              number: 80
+              number: 8080
         path: /api
         pathType: Prefix
   tls:

@@ -26,7 +26,7 @@ spec:
           service:
             name: prod-web
             port:
-              number: 80
+              number: 8080
         path: /
         pathType: Prefix
       - backend:
