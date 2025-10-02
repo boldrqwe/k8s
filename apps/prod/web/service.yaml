@@ -1,11 +1,12 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: prod-web
-  namespace: prod
+  name: test-api
+  namespace: test
 spec:
-  selector: { app: prod-web }
+  selector:
+    app: test-api
   ports:
-    - name: http
-      port: 80          # сюда смотрит Ingress
-      targetPort: 80
+    - protocol: TCP
+      port: 80        # <-- сервисный порт (то, что видит Ingress)
+      targetPort: 8080 # <-- реальный порт контейнера Spring Boot
