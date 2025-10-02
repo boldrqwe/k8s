@@ -18,7 +18,7 @@ spec:
         runAsUser: 1000
       containers:
         - name: backend
-          image: ghcr.io/boldrqwe/instructions_backend:latest
+          image: ghcr.io/boldrqwe/instructions_backend:pr-latest
           ports:
             - containerPort: 8080
           securityContext:
