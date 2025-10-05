@@ -19,6 +19,7 @@ spec:
       containers:
         - name: backend
           image: ghcr.io/boldrqwe/instructions_backend:pr-latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           securityContext:
