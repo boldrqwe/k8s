@@ -19,6 +19,7 @@ spec:
       containers:
         - name: web
           image: ghcr.io/boldrqwe/instructions_front:pr-latest
+          imagePullPolicy: Always
           env:
             - name: VITE_API_BASE_URL
               value: "https://test.79.174.84.176.sslip.io"
